@@ -31,6 +31,7 @@ shman repair                     # verify the store and restore what's missing
 
 - `link` replaces the original with a symlink into `~/.shman/store`.
 - `copy` keeps an independent copy in `$HOME` (useful for files that must not be symlinks, e.g. some service/config files).
+- With no explicit target, a source is tracked **where it lives under `$HOME`** — `shman link ./LOGIC.md` from `~/Projects/x` tracks `Projects/x/LOGIC.md` in place, not `~/LOGIC.md`. This works from any directory. Pass an explicit target only when you want to rename/relocate it (which leaves the original orphaned). `remove` accepts the same relative path you linked with.
 - `list` prints the database as a table (type, track kind, mode, path).
 - `ghost` lists canonical files left in the store that no database entry covers — usually the residue of a hand-edited `db.txt`.
 - `remove` un-tracks a path and leaves an ordinary file at home: for a `link` it moves the store file back into place; for a `copy` it overwrites home with the store version (backing up the current home content first) and drops the store copy.

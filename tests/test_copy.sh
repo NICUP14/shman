@@ -36,14 +36,17 @@ run copy empty ed -r
 assert_rc 1 "empty directory is refused"
 assert_match "$OUT" "empty directory" "explains why"
 
-# Trailing slash on the source + default target -> basename.
+# Trailing slash on the source is normalized; the default target tracks the
+# source where it lives under ~/ (in place), not flattened to ~/<basename>.
 sandbox
 run init
 mkdir -p config/nvim
 printf 'set nu\n' >config/nvim/init.vim
 run copy config/nvim/ -r
 assert_rc 0 "trailing slash source returns 0"
-assert_file_is "$HOME/nvim/init.vim" "set nu" "deployed under basename target"
+assert_file_is "$HOME/config/nvim/init.vim" "set nu" "deployed in place under ~/"
+assert_missing "$HOME/nvim" "not flattened to the basename"
+assert_match "$(cat "$HOME/.shman/db.txt")" ":config/nvim" "db records the home-relative path"
 
 # A path containing a colon survives the field parsing.
 sandbox

@@ -76,6 +76,20 @@ assert_rc 0 "remove of an unmodified copy exits 0"
 assert_file_is "$HOME/cfg" "same" "home content intact"
 assert_missing "$HOME/.shman/store/cfg" "store copy removed"
 
+# remove accepts a relative filesystem path run from a subdirectory.
+sandbox
+run init
+mkdir -p projects/app
+printf 'cfg\n' >projects/app/conf
+cd projects/app || exit 1
+run link ./conf
+run remove ./conf
+cd "$HOME" || exit 1
+assert_rc 0 "remove ./conf from a subdir returns 0"
+assert_exists "$HOME/projects/app/conf" "file left in place"
+assert_eq "" "$(readlink "$HOME/projects/app/conf" 2>/dev/null)" "no longer a symlink"
+assert_eq 0 "$(grep -c . "$HOME/.shman/db.txt")" "db entry dropped"
+
 # Corruption: the store source is gone, so remove refuses rather than guessing.
 sandbox
 run init

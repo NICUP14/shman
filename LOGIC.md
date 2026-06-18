@@ -151,18 +151,29 @@ errors out if `~/.shman` doesn't exist yet.
 
 ---
 
-## Argument parsing for `link`/`copy` — `parse_add_args, :149`
+## Argument parsing for `link`/`copy` — `parse_add_args`
 
-Both add-commands share this. It walks the args (`:153`):
+Both add-commands share this. It walks the args:
 
 - `-r` → sets `recursive=1`
 - any other `-*` → "unknown flag" error (commands parse their own options — the
   top level deliberately doesn't)
 - first bare word → `source`, second → `target`, a third → "too many arguments"
 
-Then: source is required (`:174`); both source and target are run through
-`strip_slash`; if no target was given it defaults to the source's basename
-(`:179`); and finally the target is validated against traversal (`:181`).
+Then: source is required and run through `strip_slash`; the target is validated
+against traversal.
+
+**Default target — track in place.** When no explicit target is given, it is
+**not** the source basename. It is the source's location *relative to `$HOME`*,
+computed by **`home_relative`** (`cd -P`/`pwd -P` on the source's parent, then
+strip the `$HOME/` prefix — both POSIX, no `realpath`). So `link ./LOGIC.md` run
+from `~/Projects/x` records `Projects/x/LOGIC.md` and replaces *that* file in
+place, instead of flattening to `~/LOGIC.md`. This works from any directory and
+for nested paths. A source that resolves **outside `$HOME`** has no home-relative
+path, so it falls back to the basename — the one case that still produces the
+orphaned-source behaviour described in the header. An explicit `[target]` is
+taken verbatim (still just `strip_slash` + traversal check), which is how you
+deliberately rename or relocate.
 
 ---
 
@@ -310,12 +321,19 @@ returns 0 — it's a diagnostic, not a check that can fail.
 
 ---
 
-## `remove <target>` — `cmd_remove, :728`
+## `remove <target>` — `cmd_remove`
 
 Goal: stop tracking a path and leave a plain, untracked file at home in its
 place. The inverse of `link`/`copy`, and just as careful never to lose data.
 
-1. `ensure_store`, require the DB, then `strip_slash` + `valid_target` the target
+1. `ensure_store`, require the DB, then `strip_slash` the target. To mirror how
+   `link`/`copy` derive their target, it then runs the same **`home_relative`**
+   resolution: a filesystem path like `./LOGIC.md` (or an absolute path under
+   `~/`) is turned into its home-relative db form, so you can `remove` with the
+   exact relative path you linked with. If that resolution fails (the path is
+   outside `~/`, or its parent doesn't exist from the current directory), it
+   falls back to the literal string minus a leading `./`, so passing the exact db
+   path still works from anywhere. The result is then `valid_target`-checked
    (same traversal guard as the add-commands).
 2. **Locate the entry**: scan the DB for a line whose `t_path` equals the target;
    the matching `parse_line` leaves `t_type` set for the dispatch below. Not

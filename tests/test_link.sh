@@ -22,13 +22,16 @@ run link f cfg
 n=$(grep -c . "$HOME/.shman/db.txt")
 assert_eq 1 "$n" "re-link does not duplicate the db entry"
 
-# Default target is the source basename.
+# Default target tracks the source where it lives under ~/ (in place), not
+# flattened to ~/<basename>.
 sandbox
 run init
 mkdir sub
 printf 'y\n' >sub/thing
 run link sub/thing
-assert_symlink "$HOME/thing" "default target is the basename"
+assert_symlink "$HOME/sub/thing" "default target tracks the source in place"
+assert_missing "$HOME/thing" "not flattened to the basename under ~/"
+assert_match "$(cat "$HOME/.shman/db.txt")" "f:l:644:sub/thing" "db records the home-relative path"
 
 # Trailing slash on the target is normalized away.
 sandbox
@@ -45,6 +48,20 @@ run link .bashrc
 assert_rc 0 "link a file in place returns 0"
 assert_symlink "$HOME/.bashrc" "original replaced by a symlink"
 assert_file_is "$HOME/.shman/store/.bashrc" "B" "content backed into the store"
+
+# A relative source run from a subdirectory is tracked at its real location
+# under ~/ (the reported bug: ./x was being flattened to ~/x).
+sandbox
+run init
+mkdir -p projects/app
+printf 'cfg\n' >projects/app/conf
+cd projects/app || exit 1
+run link ./conf
+cd "$HOME" || exit 1
+assert_rc 0 "link ./conf from a subdir returns 0"
+assert_symlink "$HOME/projects/app/conf" "relative source tracked in place"
+assert_missing "$HOME/conf" "not flattened to the basename under ~/"
+assert_match "$(cat "$HOME/.shman/db.txt")" "projects/app/conf" "db path is home-relative"
 
 # Linking a directory records type d and stores the tree.
 sandbox

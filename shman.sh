@@ -17,15 +17,19 @@
 # (the store copy on re-add, or the home copy on sync/repair) its current
 # content is saved into backups/<path>.<store|home>.<timestamp>.
 #
-# Caveat -- orphaned sources: link/copy take an optional <target> naming where
-# the file lives in the store and under ~/. When <target> differs from the
-# source's own location under ~/ (a different name, or because you ran the
-# command from outside ~/), shman copies the source into the store, deploys the
-# symlink/copy at ~/<target>, and leaves the ORIGINAL source file untouched.
-# That original is now orphaned: still a real file, no longer tracked, and never
-# updated by sync or repair. Editing it has no effect on the managed copy. Track
-# files in place (no <target>, run from ~/) to avoid this, or delete the orphan
-# yourself once you've confirmed ~/<target> is what you want.
+# Default target: with no <target>, the source is tracked where it actually
+# lives under ~/. So `shman link ./LOGIC.md` from ~/Projects/x tracks it as
+# Projects/x/LOGIC.md and replaces that file in place -- it is NOT flattened to
+# ~/LOGIC.md. This works from any directory and for nested paths.
+#
+# Caveat -- orphaned sources: this only bites when the store/home path ends up
+# different from where the source really is -- i.e. you pass an explicit <target>
+# that differs, or the source lives outside ~/ (no home-relative path, so it
+# falls back to the basename). Then shman copies the source into the store,
+# deploys the symlink/copy at ~/<target>, and leaves the ORIGINAL source file
+# untouched. That original is now orphaned: still a real file, no longer tracked,
+# and never updated by sync or repair. Delete the orphan yourself once you've
+# confirmed ~/<target> is what you want.
 #
 # Many filesystem states are recoverable. Subcommands that walk the DB
 # (sync, repair) treat per-entry problems as non-fatal: they fix what they
@@ -106,6 +110,22 @@ strip_slash() {
 		while [ "${_s%/}" != "$_s" ]; do _s=${_s%/}; done
 		printf '%s' "$_s"
 		;;
+	esac
+}
+
+# Print path $1's location relative to $HOME -- the canonical db form -- so a
+# source given by any relative or absolute path is tracked where it actually
+# lives under ~/ (e.g. ~/Projects/x/LOGIC.md, not flattened to ~/LOGIC.md).
+# Resolves "." / ".." and symlinked parents physically (cd -P/pwd -P, both
+# POSIX). Returns nonzero when $1 is $HOME itself, lives outside $HOME, or can't
+# be resolved; callers fall back to the basename for those.
+home_relative() {
+	_hr_dir=$(CDPATH= cd -P -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
+	_hr_home=$(CDPATH= cd -P -- "$HOME" 2>/dev/null && pwd -P) || return 1
+	_hr_abs="$_hr_dir/$(basename -- "$1")"
+	case "$_hr_abs" in
+	"$_hr_home"/*) printf '%s' "${_hr_abs#"$_hr_home"/}" ;;
+	*) return 1 ;;
 	esac
 }
 
@@ -273,7 +293,13 @@ parse_add_args() {
 		return 1
 	}
 	source=$(strip_slash "$source")
-	[ -n "$target" ] || target=${source##*/}
+	# Default target: track the source where it actually lives under ~/, so a
+	# relative path like ./LOGIC.md is tracked as Projects/x/LOGIC.md and not
+	# flattened to ~/LOGIC.md. Sources outside ~/ have no home-relative path, so
+	# they fall back to the basename (the documented orphan case).
+	if [ -z "$target" ]; then
+		target=$(home_relative "$source") || target=${source##*/}
+	fi
 	target=$(strip_slash "$target")
 	if ! valid_target "$target"; then
 		err "unsafe target path: $target"
@@ -690,6 +716,15 @@ cmd_remove() {
 		return 1
 	}
 	target=$(strip_slash "$target")
+	# Accept either an exact db path or a filesystem path (e.g. ./LOGIC.md, or an
+	# absolute path under ~/): resolve it to the home-relative db form, matching
+	# how link/copy derive their target. Fall back to the literal string (minus a
+	# leading ./) so giving the exact db path still works from any directory.
+	if _rt=$(home_relative "$target"); then
+		target=$_rt
+	else
+		target=${target#./}
+	fi
 	if ! valid_target "$target"; then
 		err "unsafe target path: $target"
 		return 1
@@ -786,8 +821,10 @@ Usage: shman <command> [args]
   sync                       make ~/ match db.txt (relink / recopy)
   repair                     verify store vs db.txt and restore links
 
-A <target> that differs from the source's own location under ~/ leaves the
-original source file orphaned (real but untracked); track in place to avoid it.
+With no [target], the source is tracked where it lives under ~/ (in place), so
+'link ./LOGIC.md' tracks Projects/x/LOGIC.md, not ~/LOGIC.md. Passing a [target]
+that differs from the source's own location (or a source outside ~/) leaves the
+original file orphaned (real but untracked).
 EOF
 }
 

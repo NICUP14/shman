@@ -22,12 +22,18 @@ shman init                       # create ~/.shman and its database
 shman link ~/.bashrc bashrc      # move into the store, leave a symlink behind
 shman copy ~/.ssh/config sshcfg  # store + keep a plain copy (no symlink)
 shman copy ~/.config/nvim nvim -r  # directories need -r
+shman list                       # show everything tracked, as a table
+shman ghost                      # find store files the database doesn't reference
+shman remove bashrc              # stop tracking, leave a plain file behind
 shman sync                       # make $HOME match the database
 shman repair                     # verify the store and restore what's missing
 ```
 
 - `link` replaces the original with a symlink into `~/.shman/store`.
 - `copy` keeps an independent copy in `$HOME` (useful for files that must not be symlinks, e.g. some service/config files).
+- `list` prints the database as a table (type, track kind, mode, path).
+- `ghost` lists canonical files left in the store that no database entry covers — usually the residue of a hand-edited `db.txt`.
+- `remove` un-tracks a path and leaves an ordinary file at home: for a `link` it moves the store file back into place; for a `copy` it overwrites home with the store version (backing up the current home content first) and drops the store copy.
 - `sync` re-creates broken links and re-deploys changed copies.
 - `repair` is like `sync` but prompts before touching an unmanaged file that is sitting where a managed link should be.
 
@@ -57,11 +63,11 @@ field_type:track_type:mode:path
 - `link`/`copy` refuse to overwrite an existing target unless it's a symlink, the source itself, or an unmodified copy shman already deploys.
 - `sync` won't delete a real file/directory sitting where a link belongs; it reports it and leaves it for `repair` to handle interactively.
 - Database writes are atomic (temp file + rename).
-- Targets containing `..` are rejected.
+- Targets containing `..`, absolute targets, and targets whose parent directory is a symlink are rejected — so a deploy can never follow a symlinked parent (e.g. `~/.config` → an external drive) and write outside the store or `$HOME`.
 
 ## Limitations
 
-- **Add-only.** There is currently no `untrack`/`remove` or `list`/`status` command. You can stop a path from being managed only by editing `db.txt`.
+- **Removal is conservative.** `remove` un-tracks a single path and always leaves a real file at home — it never deletes your data, and on a `copy` it backs up the current home content before restoring the store version. There is no bulk/recursive un-tracking; remove paths one at a time.
 - **No git integration.** The store is git-friendly, but committing/pushing is your job.
 - **Backups are never pruned.** Each overwrite adds a timestamped copy under `~/.shman/backups/`; prune it yourself when it gets large.
 - **Directories track only the top-level mode.** Permissions of files *inside* a tracked directory are preserved on copy but not individually re-enforced.

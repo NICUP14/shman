@@ -53,4 +53,18 @@ run sync
 assert_rc 1 "missing source is a non-fatal error"
 assert_match "$OUT" "source missing" "reports the corruption"
 
+# One entry needing several fixes (content + mode) is counted once, not per fix.
+sandbox
+run init
+printf 'data\n' >cfg
+chmod 644 cfg
+run copy cfg cfg
+chmod 600 "$HOME/.shman/store/cfg"   # store mode drift (recorded 644)
+printf 'edited\n' >"$HOME/cfg"       # home content drift
+run sync
+assert_rc 0 "sync returns 0"
+assert_match "$OUT" "1 files updated" "an entry needing several fixes counts once"
+assert_file_is "$HOME/cfg" "data" "home content restored from store"
+assert_mode "$HOME/.shman/store/cfg" 644 "store mode restored"
+
 report

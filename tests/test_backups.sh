@@ -49,4 +49,26 @@ run copy new new
 n=$(ls -1 "$HOME/.shman/backups" 2>/dev/null | wc -l)
 assert_eq "0" "$n" "no backups created on a first add"
 
+# Two overwrites within the same second must not clobber each other's backup.
+# `date` is pinned to a constant so every backup gets an identical timestamp,
+# forcing the collision the suffixing is meant to survive.
+sandbox
+run init
+fakebin=$SBX/fakebin
+mkdir -p "$fakebin"
+printf '#!/bin/sh\necho 20200101000000\n' >"$fakebin/date"
+chmod +x "$fakebin/date"
+PATH="$fakebin:$PATH"; export PATH
+printf 'v1\n' >cfg
+run copy cfg cfg          # first add: nothing to back up
+printf 'v2\n' >cfg
+run copy cfg cfg          # backs up store v1
+printf 'v3\n' >cfg
+run copy cfg cfg          # backs up store v2 (same timestamp -> collision)
+PATH=${PATH#"$fakebin:"}; export PATH
+n=$(ls -1 "$HOME/.shman/backups/cfg.store."* 2>/dev/null | wc -l)
+assert_eq "2" "$(echo "$n")" "both same-second store backups are kept"
+got=$(cat "$HOME/.shman/backups/cfg.store."* 2>/dev/null | tr -d '[:space:]')
+assert_eq "v1v2" "$got" "both prior versions survive the collision"
+
 report
